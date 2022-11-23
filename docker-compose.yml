@@ -1,0 +1,72 @@
+version: "3.8"
+services:
+  mysql-db:
+    image: mysql
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+        MYSQL_ROOT_PASSWORD: pass
+    volumes: 
+        - ./init:/docker-entrypoint-initdb.d
+  config-service:
+    container_name: config-service
+    image: ibanezbendezu/config-service:latest
+    ports:
+      - "8081:8081"
+  eureka-service:
+    container_name: eureka-service
+    image: ibanezbendezu/eureka-service:latest
+    ports:
+      - "8761:8761"
+    depends_on:
+      - config-service
+    links:
+      - config-service
+    deploy:
+      restart_policy:
+        condition: on-failure
+    environment:
+      - spring.config.import=optional:configservice:http://config-service:8081
+  justification-service:
+    container_name: justification-service
+    image: ibanezbendezu/justification-service:latest
+    ports:
+      - "30002:8003"
+    environment:
+      - spring.config.import=optional:configservice:http://config-service:8081
+      - EUREKA_URL=http://eureka-service:8761/eureka/
+      - DB_URL=jdbc:mysql://mysql-db:3306/justifications?useSSL=false&serviceTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false
+      - DB_USERNAME=root
+      - DB_PASSWORD=pass
+    deploy:
+        restart_policy:
+          condition: on-failure
+    depends_on:
+      - mysql-db
+      - config-service
+      - eureka-service
+    links:
+      - mysql-db
+      - config-service
+      - eureka-service
+  gateway-service:
+    container_name: gateway-service
+    image: ibanezbendezu/gateway-service:latest
+    deploy:
+      restart_policy:
+        condition: on-failure
+    environment:
+      - spring.config.import=optional:configservice:http://config-service:8081
+      - EUREKA_URL=http://eureka-service:8761/eureka/
+    ports:
+      - "8001:8001"
+    depends_on:
+      - config-service
+      - eureka-service
+      - justification-service
+    links:
+      - config-service
+      - eureka-service
+      - justification-service
+volumes:
+  mysql-data:
